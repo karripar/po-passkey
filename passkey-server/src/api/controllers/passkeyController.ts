@@ -94,6 +94,8 @@ const verifyPasskey = async (
       email: req.body.email,
     });
 
+    console.log('Expected Challenge properties: ', expectedChallenge)
+
     if (!expectedChallenge) {
       next(new CustomError('Challenge not found', 404));
       return;
@@ -108,7 +110,10 @@ const verifyPasskey = async (
           : `https://${RP_ID}`,
       expectedRPID: RP_ID,
     };
+
     const verification = await verifyRegistrationResponse(opts);
+    
+    console.log('Verification result: ', verification);
 
     const {verified, registrationInfo} = verification;
 
@@ -116,7 +121,6 @@ const verifyPasskey = async (
       next(new CustomError('Registration verification failed', 400));
       return;
     }
-
 
   } catch (error) {
     next(new CustomError((error as Error).message, 500));
