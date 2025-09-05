@@ -102,12 +102,20 @@ const verifyPasskey = async (
     const opts: VerifyRegistrationResponseOpts = {
       response: req.body.registrationOptions,
       expectedChallenge: expectedChallenge.challenge,
-      expectedOrigin: NODE_ENV === 'production' ? `https://${RP_ID}` : `http://${RP_ID}:5173`,
+      expectedOrigin:
+        NODE_ENV === 'development'
+          ? `http://${RP_ID}:5173`
+          : `https://${RP_ID}`,
       expectedRPID: RP_ID,
     };
-
-    // verify registration response
     const verification = await verifyRegistrationResponse(opts);
+
+    const {verified, registrationInfo} = verification;
+
+    if (!verified || !registrationInfo) {
+      next(new CustomError('Registration verification failed', 400));
+      return;
+    }
 
 
   } catch (error) {
