@@ -4,10 +4,11 @@ import CustomError from '../../classes/CustomError';
 import {Request, Response, NextFunction} from 'express';
 import {User} from '@sharedTypes/DBTypes';
 import fetchData from '../../utils/fetchData';
-import {generateRegistrationOptions} from '@simplewebauthn/server';
-import { Challenge } from '../../types/PasskeyTypes';
+import {generateRegistrationOptions, verifyRegistrationResponse, VerifyRegistrationResponseOpts} from '@simplewebauthn/server';
+import {Challenge} from '../../types/PasskeyTypes';
 import challengeModel from '../models/challengeModel';
 import passkeyUserModel from '../models/passkeyUserModel';
+import {RegistrationResponseJSON} from '@simplewebauthn/server/script/deps';
 
 // check environment variables
 if (
@@ -32,7 +33,6 @@ const setupPasskey = async (
   next: NextFunction,
 ) => {
   try {
-
     const options: RequestInit = {
       method: 'POST',
       headers: {
@@ -67,7 +67,7 @@ const setupPasskey = async (
     const challenge: Challenge = {
       challenge: regOptions.challenge,
       email: userResponse.user.email,
-    }
+    };
 
     await challengeModel.create(challenge);
 
@@ -85,18 +85,31 @@ const setupPasskey = async (
 
 // Registration verification handler
 const verifyPasskey = async (
-  req: Request,
-  res: Response,
+  req: Request<{},{},{email: string; registrationOptions: RegistrationResponseJSON}>,
+  res: Response<UserResponse>,
   next: NextFunction,
 ) => {
   try {
-    // TODO: Retrieve expected challenge from DB
-    // TODO: Verify registration response
-    // TODO: Check if device is already registered
-    // TODO: Save new authenticator to AuthenticatorDevice collection
-    // TODO: Update user devices array in DB
-    // TODO: Clear challenge from DB after successful registration
-    // TODO: Retrieve and send user details from AUTH API
+    const expectedChallenge = await challengeModel.findOne({
+      email: req.body.email,
+    });
+
+    if (!expectedChallenge) {
+      next(new CustomError('Challenge not found', 404));
+      return;
+    }
+
+    const opts: VerifyRegistrationResponseOpts = {
+      response: req.body.registrationOptions,
+      expectedChallenge: expectedChallenge.challenge,
+      expectedOrigin: NODE_ENV === 'production' ? `https://${RP_ID}` : `http://${RP_ID}:5173`,
+      expectedRPID: RP_ID,
+    };
+
+    // verify registration response
+    const verification = await verifyRegistrationResponse(opts);
+
+
   } catch (error) {
     next(new CustomError((error as Error).message, 500));
   }
