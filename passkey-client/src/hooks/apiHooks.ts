@@ -55,6 +55,24 @@ const usePasskey = () => {
 
     const attResp = await startRegistration(regResponse.options);
 
+    const data = {
+      email: regResponse.email,
+      registrationOptions: attResp,
+    }
+
+    const verifyOptions: RequestInit = {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    };
+
+    return await fetchData<LoginResponse>(
+      import.meta.env.VITE_PASSKEY_API + '/auth/verify',
+      verifyOptions,
+    );
+
   };
 
   // TODO: Define postLogin function
