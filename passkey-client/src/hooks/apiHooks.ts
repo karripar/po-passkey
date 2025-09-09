@@ -11,7 +11,6 @@ import {
 } from '@simplewebauthn/types';
 
 const useUser = () => {
-  // TODO: implement network functions for auth server user endpoints
   const getUserByToken = async (token: string) => {
     const options = {
       headers: {
@@ -39,7 +38,6 @@ const useUser = () => {
   return { getUserByToken, getUsernameAvailable, getEmailAvailable };
 };
 
-// TODO: Define usePasskey hook
 const usePasskey = () => {
   const postUser = async (
     user: Pick<User, 'username' | 'password' | 'email'>,
@@ -52,12 +50,12 @@ const usePasskey = () => {
       body: JSON.stringify(user),
     };
 
-    // TODO: Fetch setup response
     const registrationResponse = await fetchData<{
       email: string;
       options: PublicKeyCredentialCreationOptionsJSON;
     }>(import.meta.env.VITE_PASSKEY_API + '/auth/setup', options);
 
+    console.log(registrationResponse);
     const attResp = await startRegistration(registrationResponse.options);
 
     const data = {
@@ -76,39 +74,36 @@ const usePasskey = () => {
     );
   };
 
-  // TODO: Define postLogin function
   const postLogin = async (email: string) => {
-    const loginOptions: RequestInit = {
+    const loginOptions = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ email }),
     };
-    
-    const authResponse = await fetchData<PublicKeyCredentialRequestOptionsJSON>(
-      import.meta.env.VITE_PASSKEY_API + '/auth/login/setup',
-      loginOptions,
-    )
 
-    const attResp = await startAuthentication(authResponse);
+    const authenticationResponse =
+      await fetchData<PublicKeyCredentialRequestOptionsJSON>(
+        import.meta.env.VITE_PASSKEY_API + '/auth/login-setup',
+        loginOptions,
+      );
 
+    const attResp = await startAuthentication(authenticationResponse);
     const verifyOptions = {
       ...loginOptions,
       body: JSON.stringify({
-        email: email,
-        authenticationOptions: attResp,
+        email,
+        authResponse: attResp,
       }),
     };
 
     return await fetchData<LoginResponse>(
-      import.meta.env.VITE_PASSKEY_API + '/auth/login/verify',
+      import.meta.env.VITE_PASSKEY_API + '/auth/login-verify',
       verifyOptions,
     );
-
   };
 
-  // TODO: Return postUser and postLogin functions
   return { postUser, postLogin };
 };
 
