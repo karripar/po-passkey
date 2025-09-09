@@ -1,6 +1,5 @@
 import {LoginResponse, UserResponse} from '@sharedTypes/MessageTypes';
-import {User} from '@sharedTypes/DBTypes';
-// TODO: add imports
+import {User, UserWithNoPassword} from '@sharedTypes/DBTypes';
 import {NextFunction, Request, Response} from 'express';
 import CustomError from '../../classes/CustomError';
 import fetchData from '../../utils/fetchData';
@@ -85,7 +84,6 @@ const setupPasskey = async (
       supportedAlgorithmIDs: [-7, -257],
     });
 
-    // console.log(regOptions);
 
     const challenge: Challenge = {
       challenge: regOptions.challenge,
@@ -198,39 +196,34 @@ const authenticationOptions = async (
   next: NextFunction,
 ) => {
   try {
-    // TODO: Retrieve user and associated devices from DB
     const user = (await passkeyUserModel
       .findOne({email: req.body.email})
       .populate('devices')) as unknown as PasskeyUserGet;
-    // TODO: Generate authentication options
-    if (!user || user.devices.length === 0) {
-      next(new CustomError('User or devices not found', 404));
+
+    if (!user) {
+      next(new CustomError('User not found', 404));
       return;
     }
 
     const opts: GenerateAuthenticationOptionsOpts = {
       timeout: 60000,
       rpID: RP_ID,
+      allowCredentials: user.devices.map((device) => ({
+        id: device.credentialID,
+        type: 'public-key',
+        transports: device.transports,
+      })),
       userVerification: 'preferred',
-      allowCredentials: user.devices.map((device) => {
-        return {
-          id: device.credentialID,
-          type: 'public-key',
-          transports: device.transports,
-        };
-      }),
     };
 
-    const authOpts = await generateAuthenticationOptions(opts);
+    const authOptions = await generateAuthenticationOptions(opts);
 
-    // TODO: Save challenge to DB
     await challengeModel.create({
-      challenge: authOpts.challenge,
       email: req.body.email,
+      challenge: authOptions.challenge,
     });
 
-    res.json(authOpts);
-    // TODO: Send options in response
+    res.send(authOptions);
   } catch (error) {
     next(new CustomError((error as Error).message, 500));
   }
@@ -241,17 +234,17 @@ const verifyAuthentication = async (
   req: Request<
     {},
     {},
-    {email: string; authResponse: AuthenticationResponseJSON}
+    {
+      email: string;
+      authResponse: AuthenticationResponseJSON;
+    }
   >,
   res: Response<LoginResponse>,
   next: NextFunction,
 ) => {
   try {
-    const expectedChallenge = await challengeModel.findOne({
-      email: req.body.email,
-    });
-
-    if (!expectedChallenge) {
+    const challenge = await challengeModel.findOne({email: req.body.email});
+    if (!challenge) {
       next(new CustomError('challenge not found', 404));
       return;
     }
@@ -268,7 +261,7 @@ const verifyAuthentication = async (
     const opts: VerifyAuthenticationResponseOpts = {
       expectedRPID: RP_ID,
       response: req.body.authResponse,
-      expectedChallenge: expectedChallenge.challenge,
+      expectedChallenge: challenge.challenge,
       expectedOrigin:
         NODE_ENV === 'development'
           ? `http://${RP_ID}:5173`
@@ -286,36 +279,39 @@ const verifyAuthentication = async (
     const {verified, authenticationInfo} = verification;
 
     // Update authenticator's counter
-    if (!verified || !authenticationInfo) {
+    if (!verified) {
       await authenticatorDeviceModel.findByIdAndUpdate(user.devices[0]._id, {
-        counter: authenticationInfo?.newCounter,
+        counter: authenticationInfo.newCounter,
       });
-      next(new CustomError('Verification failed', 403));
-      return;
     }
 
     // Clear challenge from DB after successful authentication
     await challengeModel.findOneAndDelete({email: req.body.email});
 
-    // Generate and send JWT token
-    const userResponse = await fetchData<UserResponse>(
+    // Generate and send JWT
+    const userResponse = await fetchData<UserWithNoPassword>(
       AUTH_URL + '/api/v1/users/' + user.userId,
     );
 
+    console.log(userResponse);
+
     if (!userResponse) {
-      next(new CustomError('User not found', 404));
+      next(new CustomError('user not found', 404));
       return;
     }
 
     const token = jwt.sign(
-      {user_id: userResponse.user.user_id, level_name: userResponse.user.level_name},
-      JWT_SECRET as string
+      {
+        user_id: userResponse.user_id,
+        level_name: userResponse.level_name,
+      },
+      JWT_SECRET,
     );
 
     const message: LoginResponse = {
-      user: userResponse.user,
-      message: 'Login successful',
+      message: 'Login Success',
       token,
+      user: userResponse,
     };
 
     res.json(message);
